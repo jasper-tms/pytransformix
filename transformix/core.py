@@ -66,7 +66,8 @@ def transform_points(points, transformation_file):
     if not shutil.which('transformix'):
         m = ("'transformix' not found on the shell PATH. You must download elastix"
              " (https://github.com/SuperElastix/elastix/releases) and add its path"
-             " to your shell PATH.")
+             " to your shell PATH. For more detailed instructions on this, see"
+             " https://github.com/jasper-tms/pytransformix/blob/main/README.md")
         raise FileNotFoundError(m)
     # Explicitly set LD_LIBRARY_PATH so that calling transformix from a python
     # script works on MacOS. See https://github.com/htem/run_elastix/issues/3.
