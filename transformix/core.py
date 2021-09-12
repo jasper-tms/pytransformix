@@ -74,7 +74,7 @@ def transform_points(points, transformation_file):
     # This also makes transformix work on any Linux systems where the user has
     # forgotten to set LD_LIBRARY_PATH as part of installing elastix, which is
     # a common oversight since this instruction is fairly buried in the manual.
-    transformix_path = shutil.which('transformix')
+    transformix_path = os.path.realpath(shutil.which('transformix'))
     transformix_dir = os.path.dirname(transformix_path)
     # Set LD_LIBRARY_PATH to be the folder containing 'transformix' as well as
     # ../lib from that folder, which are the two possible locations for the
