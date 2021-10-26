@@ -109,13 +109,13 @@ def transform_points(points, transformation_file):
         fn = 'transformix_input.txt'
         write_points_as_transformix_input_file(points, fn)
 
-        # Prepare transformix command
-        command = ('transformix -out ./'
-                              ' -tp ' + transformation_file +
-                              ' -def ' + fn)
+        # Create transformix command
+        command = ['transformix', '-out', './',
+                   '-tp', transformation_file,
+                   '-def', fn]
         try:
-            # Run transformix
-            m = subprocess.run(command.split(' '), stdout=subprocess.PIPE)
+            # Run transformix command
+            m = subprocess.run(command, stdout=subprocess.PIPE)
         except FileNotFoundError as e:
             if "No such file or directory: 'transformix'" in e.strerror:
                 # This should never happen since we checked that transformix
