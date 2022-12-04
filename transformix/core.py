@@ -69,18 +69,22 @@ def transform_points(points, transformation_file):
              " to your shell PATH. For more detailed instructions on this, see"
              " https://github.com/jasper-tms/pytransformix/blob/main/README.md")
         raise FileNotFoundError(m)
-    # Explicitly set LD_LIBRARY_PATH so that calling transformix from a python
+    # Explicitly set LIBRARY_PATH vars so that calling transformix from a python
     # script works on MacOS. See https://github.com/htem/run_elastix/issues/3.
     # This also makes transformix work on any Linux systems where the user has
-    # forgotten to set LD_LIBRARY_PATH as part of installing elastix, which is
+    # forgotten to set LIBRARY_PATH vars as part of installing elastix, which is
     # a common oversight since this instruction is fairly buried in the manual.
     transformix_path = os.path.realpath(shutil.which('transformix'))
     transformix_dir = os.path.dirname(transformix_path)
-    # Set LD_LIBRARY_PATH to be the folder containing 'transformix' as well as
-    # ../lib from that folder, which are the two possible locations for the
-    # linked library file ('libANNlib'), depending on if the user downloaded
-    # precompiled binaries or built from source.
+    # Set LD_LIBRARY_PATH and DYLD_LIBRARY_PATH to be the folder containing
+    # 'transformix' as well as ../lib from that folder, which are the two
+    # possible locations for the linked library file ('libANNlib'), depending
+    # on if the user downloaded precompiled binaries or built from source.
     os.environ['LD_LIBRARY_PATH'] = (
+        transformix_dir + ':'
+        + os.path.dirname(transformix_dir) + '/lib'
+    )
+    os.environ['DYLD_LIBRARY_PATH'] = (
         transformix_dir + ':'
         + os.path.dirname(transformix_dir) + '/lib'
     )
