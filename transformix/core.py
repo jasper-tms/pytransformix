@@ -41,6 +41,14 @@ def transform_points(points, transformation_file):
     An Nx3 numpy array representing transformed x,y,z point coordinates.
     """
 
+    try:
+        points.shape
+    except:
+        points = np.array(points)
+
+    if points.shape == (3,):
+        return transform_points(points[np.newaxis, :], transformation_file)[0, :]
+
     def write_points_as_transformix_input_file(points, fn):
         """
         Write a numpy array to file in the format required by transformix.
