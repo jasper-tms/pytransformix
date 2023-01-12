@@ -9,9 +9,9 @@ with open('requirements.txt', 'r') as f:
 
 setuptools.setup(
     name='transformix',
-    version='0.2',
+    version='1.0.0',
     author='Jasper Phelps',
-    author_email='jtmaniatesselvin@g.harvard.edu',
+    author_email='jasper.s.phelps@gmail.com',
     description='Python wrappers for transformix',
     long_description=long_description,
     long_description_content_type='text/markdown',
