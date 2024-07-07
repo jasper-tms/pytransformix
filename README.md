@@ -1,6 +1,6 @@
 # pytransformix
 
-A python3 wrapper for `transformix`, a command-line utility provided as part of the package [elastix](https://elastix.lumc.nl/index.php)
+A python3 wrapper for `transformix`, a command-line utility provided as part of the package [elastix](https://elastix.dev/index.php)
 
 Currently runs on MacOS and Linux.
 
@@ -19,7 +19,7 @@ Currently runs on MacOS and Linux.
     pip install .
 
 ### Step 2
-Install [elastix](https://elastix.lumc.nl/download.php) by first downloading it from the [releases page](https://github.com/SuperElastix/elastix/releases). Operating system compatibility notes:
+Install [elastix](https://elastix.dev/download.php) by first downloading it from the [releases page](https://github.com/SuperElastix/elastix/releases). Operating system compatibility notes:
 - Ubuntu 22.04: Use elastix-5.1.0 or the latest version.
 - Ubuntu 20.04: Use elastix-5.0.1
 - Ubuntu 18.04: Use elastix-5.0.0
