@@ -20,8 +20,8 @@ Currently runs on MacOS and Linux.
 
 ### Step 2
 Install [elastix](https://elastix.lumc.nl/download.php) by first downloading it from the [releases page](https://github.com/SuperElastix/elastix/releases). Operating system compatibility notes:
-- Ubuntu 22.04: Use elastix-5.0.1 or the latest version.
-- Ubuntu 20.04: Use elastix-5.0.1 or the latest version.
+- Ubuntu 22.04: Use elastix-5.1.0 or the latest version.
+- Ubuntu 20.04: Use elastix-5.0.1
 - Ubuntu 18.04: Use elastix-5.0.0
 - Ubuntu 16.04: Use elastix-4.9.0
 - MacOS: elastix-5.0.1 worked on Big Sur, and I haven't tested other combinations. Probably safe to download the latest version.
