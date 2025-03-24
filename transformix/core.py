@@ -11,7 +11,71 @@ import os
 import tempfile
 import shutil
 import subprocess
+from typing import Union, List
+
 import numpy as np
+import npimage
+
+
+def call_transformix(command: Union[str, List[str]],
+                     from_directory: str = None) -> subprocess.CompletedProcess:
+    """
+    Call the command-line utility 'transformix' with the given command.
+    """
+    if isinstance(command, str):
+        command = command.split(' ')
+    if not command[0] == 'transformix':
+        command = ['transformix'] + command
+
+    if not shutil.which('transformix'):
+        raise FileNotFoundError(
+            "'transformix' not found on the shell PATH. You must download elastix"
+            " (https://github.com/SuperElastix/elastix/releases) and add its path"
+            " to your shell PATH. For more detailed instructions on this, see"
+            " https://github.com/jasper-tms/pytransformix/blob/main/README.md")
+
+    # Explicitly set LIBRARY_PATH vars so that calling transformix from a python
+    # script works on MacOS (info: https://github.com/htem/run_elastix/issues/3).
+    # This also makes transformix work on any Linux systems where the user has
+    # forgotten to set LIBRARY_PATH vars as part of installing elastix, which is
+    # a common oversight since this instruction is fairly buried in the manual.
+    transformix_path = os.path.realpath(shutil.which('transformix'))
+    transformix_dir = os.path.dirname(transformix_path)
+    # Set LD_LIBRARY_PATH and DYLD_LIBRARY_PATH to be the folder containing
+    # 'transformix' as well as ../lib from that folder, which are the two
+    # possible locations for the linked library file ('libANNlib'), depending
+    # on if the user downloaded precompiled binaries or built from source.
+    env = os.environ.copy()
+    dirs_to_add = transformix_dir + ':' + os.path.dirname(transformix_dir) + '/lib'
+    for var in ['LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH']:
+        if var in env:
+            env[var] = dirs_to_add + ':' + env[var]
+        else:
+            env[var] = dirs_to_add
+
+    try:
+        if from_directory is not None:
+            starting_dir = os.getcwd()
+            os.chdir(from_directory)
+
+        # The only line in this function that actually does something.
+        stdout = subprocess.run(command,
+                                stdout=subprocess.PIPE,
+                                env=env)
+    except FileNotFoundError as e:
+        if "No such file or directory: 'transformix'" in e.strerror:
+            # This should never happen since we checked that transformix
+            # was on the path earlier, but still checking it.
+            raise FileNotFoundError(
+                'transformix executable not found on shell PATH.'
+                ' Is elastix installed? Is it on your PATH?')
+        else:
+            raise
+    finally:
+        if from_directory is not None:
+            os.chdir(starting_dir)
+
+    return stdout
 
 
 def transform_points(points: np.ndarray,
@@ -21,11 +85,13 @@ def transform_points(points: np.ndarray,
 
     This function is a wrapper for transformix, a command-line utility provided
     as part of the package elastix (https://elastix.dev/index.php).
-    Calling transformix from the command line requires points written to a text
-    file in a certain format, and transformix's output is a text file in
-    another weird format. This function lets you simply provide a numpy array as
-    an input and get a numpy array back as output, taking care of the annoying
-    text file formatting that transformix requires.
+
+    Calling transformix from the command line requires points written in
+    a text file in a specific odd format, and transformix's output is a
+    text file in a different odd format. This function lets you simply
+    provide a numpy array of points as an input and get a numpy array of
+    transformed points as output, taking care of the annoying text file
+    formatting that transformix requires.
 
     Parameters
     ----------
@@ -47,7 +113,7 @@ def transform_points(points: np.ndarray,
 
     try:
         points.shape
-    except:
+    except AttributeError:
         points = np.array(points)
 
     if points.shape == (3,):
@@ -55,10 +121,11 @@ def transform_points(points: np.ndarray,
 
     def write_points_as_transformix_input_file(points, fn):
         """
-        Write a numpy array to file in the format required by transformix.
+        Write a numpy array containing point coordinates to file in the
+        format required by transformix.
         """
         with open(fn, 'w') as f:
-            f.write('point\n{}\n'.format(len(points)))
+            f.write(f'point\n{len(points)}\n')
             for x, y, z in points:
                 f.write('%f %f %f\n'%(x, y, z))
 
@@ -74,70 +141,88 @@ def transform_points(points: np.ndarray,
                 points.append([float(i) for i in output.split(' ')])
         return points
 
-    # Make sure we can find and run the command-line utility transformix
-    if not shutil.which('transformix'):
-        m = ("'transformix' not found on the shell PATH. You must download elastix"
-             " (https://github.com/SuperElastix/elastix/releases) and add its path"
-             " to your shell PATH. For more detailed instructions on this, see"
-             " https://github.com/jasper-tms/pytransformix/blob/main/README.md")
-        raise FileNotFoundError(m)
-    # Explicitly set LIBRARY_PATH vars so that calling transformix from a python
-    # script works on MacOS. See https://github.com/htem/run_elastix/issues/3.
-    # This also makes transformix work on any Linux systems where the user has
-    # forgotten to set LIBRARY_PATH vars as part of installing elastix, which is
-    # a common oversight since this instruction is fairly buried in the manual.
-    transformix_path = os.path.realpath(shutil.which('transformix'))
-    transformix_dir = os.path.dirname(transformix_path)
-    # Set LD_LIBRARY_PATH and DYLD_LIBRARY_PATH to be the folder containing
-    # 'transformix' as well as ../lib from that folder, which are the two
-    # possible locations for the linked library file ('libANNlib'), depending
-    # on if the user downloaded precompiled binaries or built from source.
-    os.environ['LD_LIBRARY_PATH'] = (
-        transformix_dir + ':'
-        + os.path.dirname(transformix_dir) + '/lib'
-    )
-    os.environ['DYLD_LIBRARY_PATH'] = (
-        transformix_dir + ':'
-        + os.path.dirname(transformix_dir) + '/lib'
-    )
-
-    # Some types of elastix parameter files get angry if you try to use them
-    # while not in their directory
-    starting_dir = os.getcwd()  # Store the user's initial directory
     if '/' in transformation_file:
-        os.chdir(os.path.dirname(transformation_file))  # Change directories
-
+        from_directory = os.path.dirname(transformation_file)
+    else:
+        from_directory = None
     with tempfile.TemporaryDirectory() as temp_dir:
-        try:
-            # Prepare input
-            fn = os.path.join(temp_dir, 'transformix_input.txt')
-            write_points_as_transformix_input_file(points, fn)
-
-            # Create transformix command
-            command = ['transformix', '-out', temp_dir,
-                       '-tp', transformation_file,
-                       '-def', fn]
-            try:
-                # Run transformix command
-                m = subprocess.run(command, stdout=subprocess.PIPE)
-            except FileNotFoundError as e:
-                if "No such file or directory: 'transformix'" in e.strerror:
-                    # This should never happen since we checked that transformix
-                    # was on the path earlier, but still checking it.
-                    raise FileNotFoundError(
-                        'transformix executable not found on shell PATH.'
-                        ' Is elastix installed? Is it on your PATH?')
-                else:
-                    raise
-
-            # Process output
-            output_fn = os.path.join(temp_dir, 'outputpoints.txt')
-            if not os.path.exists(output_fn):
-                print(m.stdout.decode())
-                raise Exception('transformix failed, see output above for details.')
-            new_pts = read_points_from_transformix_output_file(output_fn)
-        finally:
-            # Return user to their original dir
-            os.chdir(starting_dir)
+        # Prepare input file
+        fn = os.path.join(temp_dir, 'transformix_input.txt')
+        write_points_as_transformix_input_file(points, fn)
+        # Run transformix
+        command = ['transformix',
+                   '-out', temp_dir,
+                   '-tp', transformation_file,
+                   '-def', fn]
+        stdout = call_transformix(command, from_directory)
+        # Process output file
+        output_fn = os.path.join(temp_dir, 'outputpoints.txt')
+        if not os.path.exists(output_fn):
+            print(stdout.stdout.decode())
+            raise Exception('transformix failed, see output above for details.')
+        new_pts = read_points_from_transformix_output_file(output_fn)
 
     return np.array(new_pts)
+
+
+def transform_image(im: np.ndarray,
+                    voxel_size: Union[float, List[float]],
+                    transformation_file: str,
+                    preserve_dtype=True) -> np.ndarray:
+    """
+    Transform an image given as a numpy array of pixel values.
+
+    Returns
+    -------
+    The transformed image as a numpy array of pixel values.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_fn = os.path.join(temp_dir, 'temp_image.nrrd')
+        temp_fn_transformed = os.path.join(temp_dir, 'temp_image_transformed.nrrd')
+        npimage.save(im, temp_fn, pixel_size=voxel_size)
+        transform_image_file(temp_fn,
+                             transformation_file,
+                             output_file=temp_fn_transformed)
+        im_transformed = npimage.load(temp_fn_transformed)
+
+    if preserve_dtype and im.dtype != im_transformed.dtype:
+        im_transformed = npimage.cast(im_transformed, im.dtype,
+                                      maximize_contrast=False)
+    return im_transformed
+
+
+def transform_image_file(im_file: str,
+                         transformation_file: str,
+                         output_file=None,
+                         preserve_dtype=False) -> str:
+    """
+    Transform an image file.
+
+    Returns
+    -------
+    The filename of the transformed image.
+    """
+    if preserve_dtype:
+        raise NotImplementedError('preserve_dtype=True is not yet implemented.')
+    if output_file is None:
+        output_file = os.path.splitext(im_file)[0] + '_transformed.nrrd'
+    if os.path.exists(output_file):
+        raise FileExistsError(f'Output file {output_file} already exists.')
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        command = ['transformix',
+                   '-out', temp_dir,
+                   '-tp', transformation_file,
+                   '-in', im_file]
+        stdout = call_transformix(command)
+        # Process output file
+        output_fn = os.path.join(temp_dir, 'result.nrrd')
+        if not os.path.exists(output_fn):
+            print(stdout.stdout.decode())
+            raise Exception('transformix failed, see output above for details.')
+        # Checking again right before moving to prevent race conditions
+        if os.path.exists(output_file):
+            raise FileExistsError(f'Output file {output_file} already exists.')
+        shutil.move(output_fn, output_file)
+
+    return output_file
