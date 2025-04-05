@@ -16,9 +16,13 @@ from typing import Union, List
 import numpy as np
 import npimage
 
+default_num_threads = max(1, os.cpu_count() - 2)
+
 
 def call_transformix(command: Union[str, List[str]],
-                     from_directory: str = None) -> subprocess.CompletedProcess:
+                     from_directory: str = None,
+                     verbose: bool = False,
+                     ) -> subprocess.CompletedProcess:
     """
     Call the command-line utility 'transformix' with the given command.
     """
@@ -58,6 +62,8 @@ def call_transformix(command: Union[str, List[str]],
             starting_dir = os.getcwd()
             os.chdir(from_directory)
 
+        if verbose:
+            print('Calling transformix with command:', command)
         # The only line in this function that actually does something.
         stdout = subprocess.run(command,
                                 stdout=subprocess.PIPE,
@@ -79,7 +85,10 @@ def call_transformix(command: Union[str, List[str]],
 
 
 def transform_points(points: np.ndarray,
-                     transformation_file: str) -> np.ndarray:
+                     transformation_file: str,
+                     verbose: bool = False,
+                     num_threads: int = default_num_threads
+                     ) -> np.ndarray:
     """
     Transform points using an elastix transformation model and parameters.
 
@@ -153,9 +162,12 @@ def transform_points(points: np.ndarray,
         command = ['transformix',
                    '-out', temp_dir,
                    '-tp', transformation_file,
-                   '-def', fn]
-        stdout = call_transformix(command, from_directory)
+                   '-def', fn,
+                   '-threads', str(num_threads)]
+        stdout = call_transformix(command, from_directory, verbose=verbose)
         # Process output file
+        if verbose:
+            print('Reading transformed points from file')
         output_fn = os.path.join(temp_dir, 'outputpoints.txt')
         if not os.path.exists(output_fn):
             print(stdout.stdout.decode())
@@ -168,7 +180,10 @@ def transform_points(points: np.ndarray,
 def transform_image(im: np.ndarray,
                     voxel_size: Union[float, List[float]],
                     transformation_file: str,
-                    preserve_dtype=True) -> np.ndarray:
+                    preserve_dtype: bool = True,
+                    verbose: bool = False,
+                    num_threads: int = default_num_threads,
+                    ) -> np.ndarray:
     """
     Transform an image given as a numpy array of pixel values.
 
@@ -182,10 +197,14 @@ def transform_image(im: np.ndarray,
         npimage.save(im, temp_fn, pixel_size=voxel_size)
         transform_image_file(temp_fn,
                              transformation_file,
-                             output_file=temp_fn_transformed)
+                             output_file=temp_fn_transformed,
+                             verbose=verbose,
+                             num_threads=num_threads)
         im_transformed = npimage.load(temp_fn_transformed)
 
     if preserve_dtype and im.dtype != im_transformed.dtype:
+        if verbose:
+            print('Casting transformed image to original dtype')
         im_transformed = npimage.cast(im_transformed, im.dtype,
                                       maximize_contrast=False)
     return im_transformed
@@ -193,8 +212,11 @@ def transform_image(im: np.ndarray,
 
 def transform_image_file(im_file: str,
                          transformation_file: str,
-                         output_file=None,
-                         preserve_dtype=False) -> str:
+                         output_file: str = None,
+                         preserve_dtype: bool = False,
+                         verbose: bool = False,
+                         num_threads: int = default_num_threads,
+                         ) -> str:
     """
     Transform an image file.
 
@@ -213,8 +235,9 @@ def transform_image_file(im_file: str,
         command = ['transformix',
                    '-out', temp_dir,
                    '-tp', transformation_file,
-                   '-in', im_file]
-        stdout = call_transformix(command)
+                   '-in', im_file,
+                   '-threads', str(num_threads)]
+        stdout = call_transformix(command, verbose=verbose)
         # Process output file
         output_fn = os.path.join(temp_dir, 'result.nrrd')
         if not os.path.exists(output_fn):
@@ -223,6 +246,8 @@ def transform_image_file(im_file: str,
         # Checking again right before moving to prevent race conditions
         if os.path.exists(output_file):
             raise FileExistsError(f'Output file {output_file} already exists.')
+        if verbose:
+            print('Moving output file to', output_file)
         shutil.move(output_fn, output_file)
 
     return output_file
