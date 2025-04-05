@@ -14,12 +14,13 @@ keywords = ['transformix', 'elastix', 'elastic', 'non-rigid', 'registration', 'a
 authors = [{name = 'Jasper Phelps', email = 'jasper.s.phelps@gmail.com'}]
 classifiers = [
     'Programming Language :: Python :: 3',
+    'Intended Audience :: Science/Research',
     'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
     'Operating System :: MacOS',
     'Operating System :: POSIX :: Linux',
 ]
 urls = {Repository = 'https://github.com/jasper-tms/pytransformix'}
-dependencies = ['numpy']
+dependencies = ['numpy', 'numpyimage']
 
 [tool.setuptools.packages.find]
 include = ['transformix']
