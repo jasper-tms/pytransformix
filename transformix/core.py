@@ -257,3 +257,109 @@ def transform_image_file(im_file: str,
         shutil.move(output_fn, output_file)
 
     return output_file
+
+
+def create_vector_field(transformation_file: Filename, output_folder: Filename = None, return_field: bool = True, save_field: bool = False, verbose: bool = False) -> np.ndarray:
+    """
+    Create a file corresponding to a discrete vector field from a .txt parametric transformation field using transformix.
+
+    This function calls the 'transformix' command-line tool with the '-def all' option
+    to generate a deformation field image (.nrrd) that represents the displacement
+    vectors produced by the transformation.
+
+    Parameters
+    ----------
+    transformation_file : str
+        Path to the TransformParameters.txt file describing the transformation.
+    output_folder : str
+        Folder where the resulting .nrrd file will be saved.
+        If no output folder is provided, it will be saved in the folder of the transformation file, sub-folder: discrete_transformation
+
+    Returns
+    -------
+    np.ndarray
+        The deformation field as a NumPy array (shape: [Z, Y, X, 3]).
+    """
+    if not return_field and not save_field:
+        raise ValueError("At least one of return_field or save_field must be True.")
+    ## Resolve name of output folder
+    transformation_file = Path(transformation_file)
+    if output_folder is None:
+        parent_folder = os.path.dirname(os.path.abspath(transformation_file))
+        output_folder = os.path.join(parent_folder, "discrete_transformation")
+    output_folder = Path(output_folder)
+    if not output_folder.is_absolute():
+        parent_folder = os.path.dirname(os.path.abspath(transformation_file))
+        output_folder = os.path.join(parent_folder, output_folder)
+
+    if save_field:
+        os.makedirs(output_folder, exist_ok=True)
+
+    # Build output file path: same name as transformation_file, but .nrrd
+    base_name = os.path.splitext(os.path.basename(transformation_file))[0]
+    output_file = os.path.join(output_folder, f"{base_name}.nrrd")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Construct the transformix command
+        command = [
+            "transformix",
+            "-def", "all",
+            "-out", temp_dir,
+            "-tp", transformation_file
+        ]
+
+        # Run transformix using the provided helper function
+        stdout = call_transformix(command, verbose=verbose)
+
+        # The expected output file from transformix
+        deformation_path = os.path.join(temp_dir, "deformationField.nrrd")
+
+        if not os.path.exists(deformation_path):
+            print(stdout.stdout.decode())
+            raise FileNotFoundError(
+                f"Transformix did not produce deformation field: {deformation_path}"
+            )
+
+        # Either return the field
+        if return_field:
+            return npimage.load(deformation_path)
+        # Or save it
+        if save_field:
+            shutil.move(deformation_path, output_file)
+            return
+        return
+    
+
+def convert_transforms_to_vector_fields(
+    transforms_folder: Filename, 
+    transforms_pattern: str = 'TransformParameters*Bspline.txt', 
+    output_directory: Filename = 'df_moving_to_fixed'
+):
+    """
+    Convert all parametric transform files in a folder to discrete deformation field .nrrd files.
+
+    Parameters
+    ----------
+    transforms_folder : str or Path
+        Folder containing parametric transform files (.txt).
+    transforms_pattern : str
+        Pattern to match transform files. Default: 'TransformParameters*Bspline.txt'.
+    output_directory : str
+        Subfolder where discrete deformation field .nrrd files will be saved.
+        If relative, it is created inside `transforms_folder/output_directory`.
+        If None, it is created inside hardcoded name 'transform_folder/discrete_transformation'
+    """
+    transforms_folder = Path(transforms_folder)
+
+    # Find all transform files matching the pattern
+    transform_files = sorted(transforms_folder.glob(transforms_pattern))
+
+    if not transform_files:
+        raise FileNotFoundError(f"No transform files found in {transforms_folder} matching pattern {transforms_pattern}")
+
+    # Apply create_nrrd_image to each transform
+    for tf_file in transform_files:
+        try:
+            create_vector_field(tf_file, output_directory, return_field=False, save_field=True)
+        except Exception as e:
+            raise RuntimeError(f"Error processing {tf_file}: {e}") from e
