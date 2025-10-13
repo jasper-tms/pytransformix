@@ -259,25 +259,26 @@ def transform_image_file(im_file: str,
     return output_file
 
 
-def create_vector_field(transformation_file: Filename, return_field: bool = True, save_field_to: Optional[Filename] = None, verbose: bool = False) -> Optional[np.ndarray]:
+def create_vector_field(transformation_file: Filename, 
+                        return_field: bool = True,
+                        save_field_to: Optional[Filename] = None, 
+                        verbose: bool = False
+                        ) -> Optional[np.ndarray]:
     """
-    Create a file corresponding to a discrete vector field from a .txt parametric transformation field using transformix.
-
-    This function calls the 'transformix' command-line tool with the '-def all' option
-    to generate a deformation field image (.nrrd) that represents the displacement
-    vectors produced by the transformation.
+    Generate a discrete vector field from a parametric .txt transform using Transformix.
+    Can either return the field as a NumPy array or save it to a file.
 
     Parameters
     ----------
     transformation_file : str or pathlib.Path
         Path to the TransformParameters.txt file describing the transformation.
-    return_field : bool
+    return_field : bool, default True
         If True, the function will return the deformation field as a NumPy array.
-    save_field_to : str or pathlib.Path
+    save_field_to : str or pathlib.Path, default None
         If provided, the function will save the deformation field to this path.
         The path can be relative (to the path of the transformation_file) or absolute.
         Otherwise, it will not save the field to disk.
-    verbose : bool
+    verbose : bool, default False
         If True, prints additional information during processing.
     Returns
     -------
@@ -286,23 +287,19 @@ def create_vector_field(transformation_file: Filename, return_field: bool = True
     """
     if not return_field and save_field_to is None:
         raise ValueError("At least one of return_field or save_field must be True.")
-    ## Resolve name of output folder
+    # Resolve name of output folder
     transformation_file = Path(transformation_file)
 
     if save_field_to is not None:
-
         output_folder = Path(save_field_to)
         if not output_folder.is_absolute():
-            parent_folder = os.path.dirname(os.path.abspath(transformation_file))
-            output_folder = os.path.join(parent_folder, output_folder)
+            output_folder = transformation_file.parent / output_folder
         os.makedirs(output_folder, exist_ok=True)
 
         # Build output file path: same name as transformation_file, but .nrrd
-        base_name = os.path.splitext(os.path.basename(transformation_file))[0]
-        output_file = os.path.join(output_folder, f"{base_name}.nrrd")
+        output_file = output_folder / transformation_file.with_suffix('.nrrd').name
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Construct the transformix command
         command = [
             "transformix",
             "-def", "all",
@@ -310,7 +307,6 @@ def create_vector_field(transformation_file: Filename, return_field: bool = True
             "-tp", transformation_file
         ]
 
-        # Run transformix using the provided helper function
         stdout = call_transformix(command, verbose=verbose)
 
         # The expected output file from transformix
@@ -323,10 +319,8 @@ def create_vector_field(transformation_file: Filename, return_field: bool = True
             )
 
         # Either save the field
-        result_path = deformation_path
         if save_field_to is not None:
-            result_path = shutil.move(deformation_path, output_file)
+            deformation_path = shutil.move(deformation_path, output_file)
         # or return it (or both)
         if return_field:
-            return npimage.load(result_path)
-        return
+            return npimage.load(deformation_path)
