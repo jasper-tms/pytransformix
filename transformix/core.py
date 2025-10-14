@@ -259,35 +259,38 @@ def transform_image_file(im_file: str,
     return output_file
 
 
-def create_vector_field(transformation_file: Filename, 
+def create_vector_field(transformation_file: Filename,
                         return_field: bool = True,
-                        save_field_to: Optional[Filename] = None, 
+                        save_field_to: Optional[Filename] = None,
                         verbose: bool = False
                         ) -> Optional[np.ndarray]:
     """
-    Generate a discrete vector field from a parametric .txt transform using Transformix.
-    Can either return the field as a NumPy array or save it to a file.
+    Generate a discrete vector field from a parametric transform.
+
+    This is done by calling transformix with the `-def all` option.
 
     Parameters
     ----------
     transformation_file : str or pathlib.Path
         Path to the TransformParameters.txt file describing the transformation.
     return_field : bool, default True
-        If True, the function will return the deformation field as a NumPy array.
+        If True, return the deformation field as a numpy array.
+        If False, return None.
     save_field_to : str or pathlib.Path, default None
-        If provided, the function will save the deformation field to this path.
+        If provided, save the deformation field to this path.
         The path can be relative (to the path of the transformation_file) or absolute.
         Otherwise, it will not save the field to disk.
     verbose : bool, default False
-        If True, prints additional information during processing.
+        If True, print additional information during processing.
     Returns
     -------
-    np.ndarray
-        The deformation field as a NumPy array (shape: [Z, Y, X, 3]).
+    np.ndarray or None
+        If return_field is False, returns None.
+        If return_field is True, returns the vector field as a numpy array.
+        For a transformation on 3D space, the field will have shape [X, Y, Z, 3].
     """
     if not return_field and save_field_to is None:
         raise ValueError("At least one of return_field or save_field must be True.")
-    # Resolve name of output folder
     transformation_file = Path(transformation_file)
 
     if save_field_to is not None:
@@ -318,9 +321,7 @@ def create_vector_field(transformation_file: Filename,
                 f"Transformix did not produce deformation field: {deformation_path}"
             )
 
-        # Either save the field
         if save_field_to is not None:
             deformation_path = shutil.move(deformation_path, output_file)
-        # or return it (or both)
         if return_field:
             return npimage.load(deformation_path)
