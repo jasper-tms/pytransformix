@@ -279,6 +279,9 @@ def create_vector_field(transformation_file: Filename,
     save_field_to : str or pathlib.Path, default None
         If provided, save the deformation field to this path.
         The path can be relative (to the path of the transformation_file) or absolute.
+        The path could be a directory or a filename.  If it is a directory, the output file will have the same name
+        as the transformation_file but with a .nrrd extension.
+        If it is a filename, the output will be saved to that filename.
         Otherwise, it will not save the field to disk.
     verbose : bool, default False
         If True, print additional information during processing.
@@ -294,13 +297,16 @@ def create_vector_field(transformation_file: Filename,
     transformation_file = Path(transformation_file)
 
     if save_field_to is not None:
-        output_folder = Path(save_field_to)
-        if not output_folder.is_absolute():
-            output_folder = transformation_file.parent / output_folder
-        os.makedirs(output_folder, exist_ok=True)
+        output_location = Path(save_field_to)
+        if not output_location.is_absolute():
+            output_location = transformation_file.parent / output_location
 
-        # Build output file path: same name as transformation_file, but .nrrd
-        output_file = output_folder / transformation_file.with_suffix('.nrrd').name
+        if output_location.is_dir():
+            os.makedirs(output_location, exist_ok=True)
+            # Build output file path: same name as transformation_file, but .nrrd
+            output_file = output_location / transformation_file.with_suffix('.nrrd').name
+        else:
+            output_file = output_location
 
     with tempfile.TemporaryDirectory() as temp_dir:
         command = [
