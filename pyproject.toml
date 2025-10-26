@@ -15,7 +15,7 @@ authors = [{name = 'Jasper Phelps', email = 'jasper.s.phelps@gmail.com'}]
 classifiers = [
     'Programming Language :: Python :: 3',
     'Intended Audience :: Science/Research',
-    'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
+    'License :: OSI Approved :: MIT License',
     'Operating System :: MacOS',
     'Operating System :: POSIX :: Linux',
 ]
