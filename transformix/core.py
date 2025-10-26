@@ -172,11 +172,11 @@ def transform_points(points: np.ndarray,
         # Process output file
         if verbose:
             print('Reading transformed points from file')
-        output_fn = os.path.join(temp_dir, 'outputpoints.txt')
-        if not os.path.exists(output_fn):
+        transformix_output_fn = os.path.join(temp_dir, 'outputpoints.txt')
+        if not os.path.exists(transformix_output_fn):
             print(stdout.stdout.decode())
             raise Exception('transformix failed, see output above for details.')
-        new_pts = read_points_from_transformix_output_file(output_fn)
+        new_pts = read_points_from_transformix_output_file(transformix_output_fn)
 
     return np.array(new_pts)
 
@@ -245,16 +245,16 @@ def transform_image_file(im_file: str,
                    '-threads', str(num_threads)]
         stdout = call_transformix(command, verbose=verbose)
         # Process output file
-        output_fn = os.path.join(temp_dir, 'result.nrrd')
-        if not os.path.exists(output_fn):
+        transformix_output_fn = os.path.join(temp_dir, 'result.nrrd')
+        if not os.path.exists(transformix_output_fn):
             print(stdout.stdout.decode())
             raise Exception('transformix failed, see output above for details.')
-        # Checking again right before moving to prevent race conditions
+        # Check again right before moving to prevent race conditions
         if os.path.exists(output_file):
             raise FileExistsError(f'Output file {output_file} already exists.')
         if verbose:
             print('Moving output file to', output_file)
-        shutil.move(output_fn, output_file)
+        shutil.move(transformix_output_fn, output_file)
 
     return output_file
 
@@ -266,7 +266,6 @@ def create_vector_field(transformation_file: Filename,
                         ) -> Optional[np.ndarray]:
     """
     Generate a discrete vector field from a parametric transform.
-
     This is done by calling transformix with the `-def all` option.
 
     Parameters
@@ -277,14 +276,15 @@ def create_vector_field(transformation_file: Filename,
         If True, return the deformation field as a numpy array.
         If False, return None.
     save_field_to : str or pathlib.Path, default None
-        If provided, save the deformation field to this path.
-        The path can be relative (to the path of the transformation_file) or absolute.
-        The path could be a directory or a filename.  If it is a directory, the output file will have the same name
-        as the transformation_file but with a .nrrd extension.
-        If it is a filename, the output will be saved to that filename.
-        Otherwise, it will not save the field to disk.
+        If None, the field is not saved to disk but instead is returned.
+        If an absolute path, save the vector field there.
+        If not an relative path, it is considered relative to transformation_file.
+        The path can be a directory or a filename. If it is a directory,
+        the output file will have the same name as transformation_file
+        but with a .nrrd extension.
     verbose : bool, default False
         If True, print additional information during processing.
+
     Returns
     -------
     np.ndarray or None
@@ -293,7 +293,7 @@ def create_vector_field(transformation_file: Filename,
         For a transformation on 3D space, the field will have shape [X, Y, Z, 3].
     """
     if not return_field and save_field_to is None:
-        raise ValueError("At least one of return_field or save_field must be True.")
+        raise ValueError('return_field must be True or save_field must be specified.')
     transformation_file = Path(transformation_file)
 
     if save_field_to is not None:
@@ -309,25 +309,19 @@ def create_vector_field(transformation_file: Filename,
             output_file = output_location
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        command = [
-            "transformix",
-            "-def", "all",
-            "-out", temp_dir,
-            "-tp", transformation_file
-        ]
-
+        command = ['transformix',
+                   '-def', 'all',
+                   '-out', temp_dir,
+                   '-tp', transformation_file]
         stdout = call_transformix(command, verbose=verbose)
 
-        # The expected output file from transformix
-        deformation_path = os.path.join(temp_dir, "deformationField.nrrd")
-
-        if not os.path.exists(deformation_path):
+        transformix_output_fn = os.path.join(temp_dir, 'deformationField.nrrd')
+        if not os.path.exists(transformix_output_fn):
             print(stdout.stdout.decode())
-            raise FileNotFoundError(
-                f"Transformix did not produce deformation field: {deformation_path}"
-            )
+            raise FileNotFoundError('Transformix did not produce a file at'
+                                    f' {transformix_output_fn}')
 
         if save_field_to is not None:
-            deformation_path = shutil.move(deformation_path, output_file)
+            deformation_path = shutil.move(transformix_output_fn, output_file)
         if return_field:
             return npimage.load(deformation_path)
