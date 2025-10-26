@@ -21,6 +21,9 @@ default_num_threads = max(1, os.cpu_count() - 2)
 
 Filename = Union[str, Path]
 
+__all__ = ['call_transformix', 'change_output_settings', 'transform_points',
+           'transform_image', 'transform_image_file']
+
 
 def call_transformix(command: Union[str, List[str]],
                      from_directory: Optional[Filename] = None,

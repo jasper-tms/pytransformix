@@ -1,6 +1,3 @@
-from .core import (
-    call_transformix,
-    transform_points,
-    transform_image,
-    transform_image_file,
-)
+#!/usr/bin/env python3
+
+from .core import *
