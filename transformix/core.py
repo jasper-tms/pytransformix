@@ -12,6 +12,7 @@ from pathlib import Path
 import tempfile
 import shutil
 import subprocess
+import contextlib
 from typing import Union, List, Optional
 
 import numpy as np
@@ -88,6 +89,69 @@ def call_transformix(command: Union[str, List[str]],
             os.chdir(starting_dir)
 
     return stdout
+
+
+def change_output_settings(input_file: Filename,
+                           output_file: Optional[Union[Filename, 'FileWrapper']] = None,
+                           origin=None,
+                           size=None,
+                           spacing=None,
+                           ) -> Path:
+    """
+    Change any number of the 3 output settings in a TransformParameters.txt file.
+
+    Parameters
+    ----------
+    input_file : str or pathlib.Path
+        The filename of a TransformParameters.txt file to modify.
+
+    output_file : str or pathlib.Path or object with a write() method, optional
+        The file object or filename to write the modified TransformParameters to.
+        If None, a new file will be created next to input_file
+        with '_modified' appended to its stem.
+
+    origin, size, spacing : list of 3 ints or floats, optional
+        The output settings of the transformation to change.
+        size must be ints, the others can be floats.
+
+    Returns
+    -------
+    The filename of the modified TransformParameters.txt file.
+    """
+    input_file = Path(input_file)
+    if output_file is None:
+        output_file = input_file.with_stem(input_file.stem + '_modified')
+        if output_file.exists():
+            raise FileExistsError(f'Output file {output_file} already exists,'
+                                  ' please specify a different output_file.')
+
+    # If input/output_file are already file-like objects, we skip
+    # file opening and closing operations by using a nullcontext
+    if hasattr(input_file, 'readline'):
+        input_file = contextlib.nullcontext(input_file)
+    else:
+        input_file = open(input_file, 'r')
+    if hasattr(output_file, 'write'):
+        output_file = contextlib.nullcontext(output_file)
+    else:
+        output_file = open(output_file, 'w')
+
+    with input_file as input_file, output_file as output_file:
+        for line in input_file.readlines():
+            if spacing is not None and line[1:8] == 'Spacing':
+                # TODO Check if spacing isn't iterable, and if so, write it n times
+                # where n is the current number of entries in spacing
+                line = f'(Spacing {spacing[0]} {spacing[1]} {spacing[2]})\n'
+            elif origin is not None and line[1:7] == 'Origin':
+                line = f'(Origin {origin[0]} {origin[1]} {origin[2]})\n'
+            elif size is not None and line[1:5] == 'Size':
+                line = f'(Size {size[0]} {size[1]} {size[2]})\n'
+            output_file.write(line)
+    output_file.flush()
+
+    if hasattr(output_file, 'name'):
+        output_file = output_file.name
+    return Path(output_file)
 
 
 def transform_points(points: np.ndarray,
@@ -185,9 +249,12 @@ def transform_points(points: np.ndarray,
 
 
 def transform_image(im: np.ndarray,
-                    voxel_size: Union[float, List[float]],
+                    input_voxel_size: Union[float, List[float]],
                     transformation_file: Filename,
                     preserve_dtype: bool = True,
+                    output_voxel_size: Optional[Union[float, List[float]]] = None,
+                    output_origin: Optional[List[float]] = None,
+                    output_size: Optional[List[int]] = None,
                     verbose: bool = False,
                     num_threads: int = default_num_threads,
                     ) -> np.ndarray:
@@ -201,7 +268,7 @@ def transform_image(im: np.ndarray,
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_fn = os.path.join(temp_dir, 'temp_image.nrrd')
         temp_fn_transformed = os.path.join(temp_dir, 'temp_image_transformed.nrrd')
-        npimage.save(im, temp_fn, pixel_size=voxel_size)
+        npimage.save(im, temp_fn, pixel_size=input_voxel_size)
         transform_image_file(temp_fn,
                              transformation_file,
                              output_file=temp_fn_transformed,
@@ -221,6 +288,9 @@ def transform_image_file(im_file: str,
                          transformation_file: Filename,
                          output_file: Optional[Filename] = None,
                          preserve_dtype: bool = False,
+                         output_voxel_size: Optional[Union[float, List[float]]] = None,
+                         output_origin: Optional[List[float]] = None,
+                         output_size: Optional[List[int]] = None,
                          verbose: bool = False,
                          num_threads: int = default_num_threads,
                          ) -> str:
@@ -240,10 +310,16 @@ def transform_image_file(im_file: str,
     if os.path.exists(output_file):
         raise FileExistsError(f'Output file {output_file} already exists.')
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with tempfile.TemporaryDirectory() as temp_dir, \
+            tempfile.NamedTemporaryFile(mode='w', suffix='.txt') as temp_transformation_file:
+        change_output_settings(transformation_file,
+                               output_file=temp_transformation_file,
+                               origin=output_origin,
+                               size=output_size,
+                               spacing=output_voxel_size)
         command = ['transformix',
                    '-out', temp_dir,
-                   '-tp', transformation_file,
+                   '-tp', temp_transformation_file.name,
                    '-in', im_file,
                    '-threads', str(num_threads)]
         stdout = call_transformix(command, verbose=verbose)
