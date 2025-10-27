@@ -13,7 +13,7 @@ import tempfile
 import shutil
 import subprocess
 import contextlib
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Iterable
 
 import numpy as np
 import npimage
@@ -93,9 +93,10 @@ def call_transformix(command: Union[str, List[str]],
 
 def change_output_settings(input_file: Filename,
                            output_file: Optional[Union[Filename, 'FileWrapper']] = None,
-                           origin=None,
-                           size=None,
-                           spacing=None,
+                           origin: Optional[Union[float, Iterable[float]]] = None,
+                           shape: Optional[Union[int, Iterable[int]]] = None,
+                           spacing: Optional[Union[float, Iterable[float]]] = None,
+                           overwrite: bool = False
                            ) -> Path:
     """
     Change any number of the 3 output settings in a TransformParameters.txt file.
@@ -107,47 +108,85 @@ def change_output_settings(input_file: Filename,
 
     output_file : str or pathlib.Path or object with a write() method, optional
         The file object or filename to write the modified TransformParameters to.
-        If None, a new file will be created next to input_file
-        with '_modified' appended to its stem.
+        If None, a new file will be created with the same filename as
+          input_file but with '_modified' appended to its stem.
 
-    origin, size, spacing : list of 3 ints or floats, optional
-        The output settings of the transformation to change.
-        size must be ints, the others can be floats.
+    origin, shape, spacing : float/int or list/tuple/array of 3 floats/ints, optional
+        The output settings to change. shape must be ints, the others can be floats.
+        If a single float/int is provided, it is used for all dimensions.
+          e.g. spacing=2 -> spacing=(2, 2, 2) for a 3D TransformParameters file.
+        If None, the setting is not changed.
+        Note that 'shape' corresponds to 'Size' in the TransformParameters file.
+
+    overwrite : bool, default False
+        If True, overwrite output_file if it already exists.
+        If False and output_file already exists, raise an error.
 
     Returns
     -------
-    The filename of the modified TransformParameters.txt file.
+    pathlib.Path
+        The file path of the modified TransformParameters.
     """
     input_file = Path(input_file)
     if output_file is None:
         output_file = input_file.with_stem(input_file.stem + '_modified')
-        if output_file.exists():
+        if output_file.exists() and overwrite is False:
             raise FileExistsError(f'Output file {output_file} already exists,'
-                                  ' please specify a different output_file.')
+                                  ' please specify a different output_file'
+                                  ' or set overwrite=True.')
 
-    # If input/output_file are already file-like objects, we skip
-    # file opening and closing operations by using a nullcontext
+    # If input/output_file are already file-like objects, we skip context
+    # management by using a nullcontext, and we make sure to flush manually
     if hasattr(input_file, 'readline'):
         input_file = contextlib.nullcontext(input_file)
     else:
         input_file = open(input_file, 'r')
     if hasattr(output_file, 'write'):
         output_file = contextlib.nullcontext(output_file)
+        do_flush = True
     else:
         output_file = open(output_file, 'w')
+        do_flush = False
+
+    def count_entries(line: str, sep: str = ' ') -> int:
+        """
+        In a line like '(Spacing 2.1 1 1.4)', count how many entries
+        come after the keyword, making sure to ignore multiple spaces
+        between values.
+        """
+        while '  ' in line:
+            line = line.replace(sep*2, sep)
+        return len(line.strip().split(sep)) - 1
 
     with input_file as input_file, output_file as output_file:
+        err_msg = 'Provided {} has length {}, but expected length {}.'
         for line in input_file.readlines():
-            if spacing is not None and line[1:8] == 'Spacing':
-                # TODO Check if spacing isn't iterable, and if so, write it n times
-                # where n is the current number of entries in spacing
-                line = f'(Spacing {spacing[0]} {spacing[1]} {spacing[2]})\n'
-            elif origin is not None and line[1:7] == 'Origin':
-                line = f'(Origin {origin[0]} {origin[1]} {origin[2]})\n'
-            elif size is not None and line[1:5] == 'Size':
-                line = f'(Size {size[0]} {size[1]} {size[2]})\n'
+            if origin is not None and line[1:7] == 'Origin':
+                n_entries = count_entries(line)
+                if not hasattr(origin, '__len__'):
+                    origin = [origin] * count_entries(line)
+                if len(origin) != n_entries:
+                    raise ValueError(err_msg.format('origin', len(origin), n_entries))
+                line = f'(Origin {" ".join(map(str, origin))})\n'
+            elif shape is not None and line[1:5] == 'Size':
+                n_entries = count_entries(line)
+                if not hasattr(shape, '__len__'):
+                    shape = [shape] * count_entries(line)
+                if len(shape) != n_entries:
+                    raise ValueError(err_msg.format('shape', len(shape), n_entries))
+                if not all(np.issubdtype(type(s), np.integer) for s in shape):
+                    raise ValueError('All entries in "shape" must be integer types.')
+                line = f'(Size {" ".join(map(str, shape))})\n'
+            elif spacing is not None and line[1:8] == 'Spacing':
+                n_entries = count_entries(line)
+                if not hasattr(spacing, '__len__'):
+                    spacing = [spacing] * n_entries
+                if len(spacing) != n_entries:
+                    raise ValueError(err_msg.format('spacing', len(spacing), n_entries))
+                line = f'(Spacing {" ".join(map(str, spacing))})\n'
             output_file.write(line)
-    output_file.flush()
+        if do_flush:
+            output_file.flush()
 
     if hasattr(output_file, 'name'):
         output_file = output_file.name
