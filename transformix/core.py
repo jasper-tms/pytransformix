@@ -23,7 +23,7 @@ default_num_threads = max(1, os.cpu_count() - 2)
 Filename = Union[str, Path]
 
 __all__ = ['call_transformix', 'change_output_settings', 'transform_points',
-           'transform_image', 'transform_image_file']
+           'transform_image', 'transform_image_file', 'create_vector_field']
 
 
 def call_transformix(command: Union[str, List[str]],
@@ -93,9 +93,9 @@ def call_transformix(command: Union[str, List[str]],
 
 def change_output_settings(input_file: Filename,
                            output_file: Optional[Union[Filename, 'FileWrapper']] = None,
-                           origin: Optional[Union[float, Iterable[float]]] = None,
+                           voxel_size: Optional[Union[float, Iterable[float]]] = None,
                            shape: Optional[Union[int, Iterable[int]]] = None,
-                           spacing: Optional[Union[float, Iterable[float]]] = None,
+                           origin: Optional[Union[float, Iterable[float]]] = None,
                            overwrite: bool = False
                            ) -> Path:
     """
@@ -111,12 +111,19 @@ def change_output_settings(input_file: Filename,
         If None, a new file will be created with the same filename as
           input_file but with '_modified' appended to its stem.
 
-    origin, shape, spacing : float/int or list/tuple/array of 3 floats/ints, optional
-        The output settings to change. shape must be ints, the others can be floats.
+    voxel_size, shape, origin: float/int or list/tuple/array of 3 floats/ints, optional
+        The output settings to change.
+        shape must be ints, the others can be floats.
         If a single float/int is provided, it is used for all dimensions.
-          e.g. spacing=2 -> spacing=(2, 2, 2) for a 3D TransformParameters file.
+          e.g. voxel_size=2 -> voxel_size=(2, 2, 2) for a 3D TransformParameters file.
         If None, the setting is not changed.
-        Note that 'shape' corresponds to 'Size' in the TransformParameters file.
+        'voxel_size' corresponds the elastix parameter 'Spacing', the physical
+          size (in microns or millimeters, for example) of each voxel.
+        'shape' corresponds to the elastix parameter 'Size', the number of
+          voxels along each dimension of the image.
+        'origin' corresponds to the elastix parameter 'Origin', the physical
+          location (in microns for example) where the top corner of the moving
+          image is located within the fixed image's space.
 
     overwrite : bool, default False
         If True, overwrite output_file if it already exists.
@@ -161,13 +168,13 @@ def change_output_settings(input_file: Filename,
     with input_file as input_file, output_file as output_file:
         err_msg = 'Provided {} has length {}, but expected length {}.'
         for line in input_file.readlines():
-            if origin is not None and line[1:7] == 'Origin':
+            if voxel_size is not None and line[1:8] == 'Spacing':
                 n_entries = count_entries(line)
-                if not hasattr(origin, '__len__'):
-                    origin = [origin] * count_entries(line)
-                if len(origin) != n_entries:
-                    raise ValueError(err_msg.format('origin', len(origin), n_entries))
-                line = f'(Origin {" ".join(map(str, origin))})\n'
+                if not hasattr(voxel_size, '__len__'):
+                    voxel_size = [voxel_size] * n_entries
+                if len(voxel_size) != n_entries:
+                    raise ValueError(err_msg.format('voxel_size', len(voxel_size), n_entries))
+                line = f'(Spacing {" ".join(map(str, voxel_size))})\n'
             elif shape is not None and line[1:5] == 'Size':
                 n_entries = count_entries(line)
                 if not hasattr(shape, '__len__'):
@@ -177,13 +184,13 @@ def change_output_settings(input_file: Filename,
                 if not all(np.issubdtype(type(s), np.integer) for s in shape):
                     raise ValueError('All entries in "shape" must be integer types.')
                 line = f'(Size {" ".join(map(str, shape))})\n'
-            elif spacing is not None and line[1:8] == 'Spacing':
+            elif origin is not None and line[1:7] == 'Origin':
                 n_entries = count_entries(line)
-                if not hasattr(spacing, '__len__'):
-                    spacing = [spacing] * n_entries
-                if len(spacing) != n_entries:
-                    raise ValueError(err_msg.format('spacing', len(spacing), n_entries))
-                line = f'(Spacing {" ".join(map(str, spacing))})\n'
+                if not hasattr(origin, '__len__'):
+                    origin = [origin] * count_entries(line)
+                if len(origin) != n_entries:
+                    raise ValueError(err_msg.format('origin', len(origin), n_entries))
+                line = f'(Origin {" ".join(map(str, origin))})\n'
             output_file.write(line)
         if do_flush:
             output_file.flush()
@@ -292,8 +299,8 @@ def transform_image(im: np.ndarray,
                     transformation_file: Filename,
                     preserve_dtype: bool = True,
                     output_voxel_size: Optional[Union[float, List[float]]] = None,
+                    output_shape: Optional[List[int]] = None,
                     output_origin: Optional[List[float]] = None,
-                    output_size: Optional[List[int]] = None,
                     verbose: bool = False,
                     num_threads: int = default_num_threads,
                     ) -> np.ndarray:
@@ -311,6 +318,10 @@ def transform_image(im: np.ndarray,
         transform_image_file(temp_fn,
                              transformation_file,
                              output_file=temp_fn_transformed,
+                             preserve_dtype=False,
+                             output_voxel_size=output_voxel_size,
+                             output_shape=output_shape,
+                             output_origin=output_origin,
                              verbose=verbose,
                              num_threads=num_threads)
         im_transformed = npimage.load(temp_fn_transformed)
@@ -328,8 +339,9 @@ def transform_image_file(im_file: str,
                          output_file: Optional[Filename] = None,
                          preserve_dtype: bool = False,
                          output_voxel_size: Optional[Union[float, List[float]]] = None,
+                         output_shape: Optional[List[int]] = None,
                          output_origin: Optional[List[float]] = None,
-                         output_size: Optional[List[int]] = None,
+                         overwrite: bool = False,
                          verbose: bool = False,
                          num_threads: int = default_num_threads,
                          ) -> str:
@@ -346,16 +358,17 @@ def transform_image_file(im_file: str,
     if output_file is None:
         output_file = os.path.splitext(im_file)[0] + '_transformed.nrrd'
     output_file = str(output_file)
-    if os.path.exists(output_file):
-        raise FileExistsError(f'Output file {output_file} already exists.')
+    if os.path.exists(output_file) and not overwrite:
+        raise FileExistsError(f'Output file {output_file} already exists. Please '
+                              'specify a different output_file or set overwrite=True.')
 
     with tempfile.TemporaryDirectory() as temp_dir, \
             tempfile.NamedTemporaryFile(mode='w', suffix='.txt') as temp_transformation_file:
         change_output_settings(transformation_file,
                                output_file=temp_transformation_file,
+                               voxel_size=output_voxel_size,
                                origin=output_origin,
-                               size=output_size,
-                               spacing=output_voxel_size)
+                               shape=output_shape)
         command = ['transformix',
                    '-out', temp_dir,
                    '-tp', temp_transformation_file.name,
@@ -368,8 +381,9 @@ def transform_image_file(im_file: str,
             print(stdout.stdout.decode())
             raise Exception('transformix failed, see output above for details.')
         # Check again right before moving to prevent race conditions
-        if os.path.exists(output_file):
-            raise FileExistsError(f'Output file {output_file} already exists.')
+        if os.path.exists(output_file) and not overwrite:
+            raise FileExistsError(f'Output file {output_file} already exists. Please '
+                                  'specify a different output_file or set overwrite=True.')
         if verbose:
             print('Moving output file to', output_file)
         shutil.move(transformix_output_fn, output_file)
@@ -380,6 +394,10 @@ def transform_image_file(im_file: str,
 def create_vector_field(transformation_file: Filename,
                         return_field: bool = True,
                         save_field_to: Optional[Filename] = None,
+                        output_voxel_size: Optional[Union[float, List[float]]] = None,
+                        output_shape: Optional[List[int]] = None,
+                        output_origin: Optional[List[float]] = None,
+                        overwrite: bool = False,
                         verbose: bool = False
                         ) -> Optional[np.ndarray]:
     """
@@ -390,16 +408,23 @@ def create_vector_field(transformation_file: Filename,
     ----------
     transformation_file : str or pathlib.Path
         Path to the TransformParameters.txt file describing the transformation.
+
     return_field : bool, default True
         If True, return the deformation field as a numpy array.
-        If False, return None.
+        If False, return None. This option leads to slightly faster runtime.
+
     save_field_to : str or pathlib.Path, default None
-        If None, the field is not saved to disk but instead is returned.
+        If None, the vector field is not saved to disk.
         If an absolute path, save the vector field there.
-        If not an relative path, it is considered relative to transformation_file.
-        The path can be a directory or a filename. If it is a directory,
-        the output file will have the same name as transformation_file
-        but with a .nrrd extension.
+        If not an absolute path, it is considered relative to transformation_file.
+        The path can be a directory or a filename - if it is a directory,
+          the output file will have the same name as transformation_file
+          but with a .nrrd extension.
+
+    overwrite : bool, default False
+        If True, overwrite an existing file at the target path.
+        If False and a file already exists at the target path, raise an error.
+
     verbose : bool, default False
         If True, print additional information during processing.
 
@@ -426,11 +451,21 @@ def create_vector_field(transformation_file: Filename,
         else:
             output_file = output_location
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+        if output_file.exists() and not overwrite:
+            raise FileExistsError(f'Output file {output_file} already exists. Please '
+                                  'specify a different save_field_to or set overwrite=True.')
+
+    with tempfile.TemporaryDirectory() as temp_dir, \
+            tempfile.NamedTemporaryFile(mode='w', suffix='.txt') as temp_transformation_file:
+        change_output_settings(transformation_file,
+                               output_file=temp_transformation_file,
+                               voxel_size=output_voxel_size,
+                               origin=output_origin,
+                               shape=output_shape)
         command = ['transformix',
                    '-def', 'all',
                    '-out', temp_dir,
-                   '-tp', transformation_file]
+                   '-tp', temp_transformation_file.name]
         stdout = call_transformix(command, verbose=verbose)
 
         transformix_output_fn = os.path.join(temp_dir, 'deformationField.nrrd')
@@ -440,6 +475,11 @@ def create_vector_field(transformation_file: Filename,
                                     f' {transformix_output_fn}')
 
         if save_field_to is not None:
-            deformation_path = shutil.move(transformix_output_fn, output_file)
+            # Check again just before overwriting to prevent race condition
+            # where the file was created since we last checked
+            if output_file.exists() and not overwrite:
+                raise FileExistsError(f'Output file {output_file} already exists. Please '
+                                      'specify a different save_field_to or set overwrite=True.')
+            transformix_output_fn = shutil.move(transformix_output_fn, output_file)
         if return_field:
-            return npimage.load(deformation_path)
+            return npimage.load(transformix_output_fn)
