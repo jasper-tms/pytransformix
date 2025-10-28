@@ -135,6 +135,7 @@ def change_output_settings(input_file: Filename,
         The file path of the modified TransformParameters.
     """
     input_file = Path(input_file)
+    input_file_parent = input_file.resolve().parent
     if output_file is None:
         output_file = input_file.with_stem(input_file.stem + '_modified')
         if output_file.exists() and overwrite is False:
@@ -168,7 +169,11 @@ def change_output_settings(input_file: Filename,
     with input_file as input_file, output_file as output_file:
         err_msg = 'Provided {} has length {}, but expected length {}.'
         for line in input_file.readlines():
-            if voxel_size is not None and line[1:8] == 'Spacing':
+            if line[1:26].lower() == 'initialtransformparameter':
+                initial_transform_fn = Path(line[line.find(' ')+1:-2].strip(' "\n'))
+                initial_transform_fn = input_file_parent / initial_transform_fn
+                line = (f'(InitialTransformParameterFileName "{initial_transform_fn}")\n')
+            elif voxel_size is not None and line[1:8] == 'Spacing':
                 n_entries = count_entries(line)
                 if not hasattr(voxel_size, '__len__'):
                     voxel_size = [voxel_size] * n_entries
