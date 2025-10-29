@@ -170,8 +170,8 @@ def change_output_settings(input_file: Filename,
         err_msg = 'Provided {} has length {}, but expected length {}.'
         for line in input_file.readlines():
             if line[1:26].lower() == 'initialtransformparameter':
-                initial_transform_fn = Path(line[line.find(' ')+1:-2].strip(' "\n'))
-                if str(initial_transform_fn) != 'NoInitialTransform':
+                initial_transform_fn = line[line.find(' ')+1:-2].strip(' "\n')
+                if initial_transform_fn.lower() != 'noinitialtransform':
                     initial_transform_fn = input_file_parent / initial_transform_fn
                     line = (f'(InitialTransformParameterFileName "{initial_transform_fn}")\n')
             elif voxel_size is not None and line[1:8] == 'Spacing':
