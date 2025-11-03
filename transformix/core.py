@@ -23,7 +23,8 @@ default_num_threads = max(1, os.cpu_count() - 2)
 Filename = Union[str, Path]
 
 __all__ = ['call_transformix', 'change_output_settings', 'transform_points',
-           'transform_image', 'transform_image_file', 'create_vector_field']
+           'transform_image', 'transform_image_file', 'create_vector_field', 
+           'get_output_settings']
 
 
 def call_transformix(command: Union[str, List[str]],
@@ -89,6 +90,33 @@ def call_transformix(command: Union[str, List[str]],
             os.chdir(starting_dir)
 
     return stdout
+
+
+def get_output_settings(input_file: Filename) -> dict:
+    """
+    Get the output settings from a TransformParameters.txt file.
+
+    Parameters
+    ----------
+    input_file : str or pathlib.Path
+        The filename of a TransformParameters.txt file to read.
+
+    Returns
+    -------
+    dict
+        A dictionary with keys 'voxel_size', 'shape', and 'origin',
+        containing the corresponding output settings from the file.
+    """
+    settings = {}
+    with open(input_file, 'r') as f:
+        for line in f.readlines():
+            if line[1:8] == 'Spacing':
+                settings['voxel_size'] = [float(x) for x in line.strip('()\n').split()[1:]]
+            elif line[1:5] == 'Size':
+                settings['shape'] = [int(x) for x in line.strip('()\n').split()[1:]]
+            elif line[1:7] == 'Origin':
+                settings['origin'] = [float(x) for x in line.strip('()\n').split()[1:]]
+    return settings
 
 
 def change_output_settings(input_file: Filename,
